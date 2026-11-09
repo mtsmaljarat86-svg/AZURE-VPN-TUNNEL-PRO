@@ -1,0 +1,46 @@
+name: Check WireGuard on my Windows laptop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-wireguard:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 5
+    steps:
+      - name: Check Windows and WireGuard installation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Runner computer: $env:COMPUTERNAME"
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version
+
+          $wg = Get-Command wg.exe -ErrorAction SilentlyContinue
+          if (-not $wg) {
+            $candidates = @(
+              "$env:ProgramFiles\WireGuard\wg.exe",
+              "${env:ProgramFiles(x86)}\WireGuard\wg.exe"
+            )
+            $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if ($found) { $wg = Get-Item $found }
+          }
+
+          if (-not $wg) {
+            Write-Error "WireGuard tools were not found. Install the official WireGuard for Windows app, then rerun."
+          }
+
+          Write-Host "WireGuard executable found: $($wg.Source)"
+          & $wg.Source --version
+
+          $service = Get-Service -Name WireGuardManager -ErrorAction SilentlyContinue
+          if ($service) {
+            Write-Host "WireGuard Manager service: $($service.Status)"
+          } else {
+            Write-Host "WireGuard Manager service was not found."
+          }
+
+          Write-Host "PASS: GitHub self-hosted runner reached this Windows laptop and WireGuard tools were detected."
+          Write-Host "NOTE: Diagnostic only; it does not create or start a VPN tunnel."
