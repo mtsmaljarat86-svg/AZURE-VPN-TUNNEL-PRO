@@ -18,22 +18,21 @@ jobs:
           Write-Host "Runner computer: $env:COMPUTERNAME"
           Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version
 
-          $wg = Get-Command wg.exe -ErrorAction SilentlyContinue
-          if (-not $wg) {
+          $wgPath = (Get-Command wg.exe -ErrorAction SilentlyContinue).Source
+          if (-not $wgPath) {
             $candidates = @(
               "$env:ProgramFiles\WireGuard\wg.exe",
               "${env:ProgramFiles(x86)}\WireGuard\wg.exe"
             )
-            $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-            if ($found) { $wg = Get-Item $found }
+            $wgPath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           }
 
-          if (-not $wg) {
+          if (-not $wgPath) {
             Write-Error "WireGuard tools were not found. Install the official WireGuard for Windows app, then rerun."
           }
 
-          Write-Host "WireGuard executable found: $($wg.Source)"
-          & $wg.Source --version
+          Write-Host "WireGuard executable found: $wgPath"
+          & $wgPath --version
 
           $service = Get-Service -Name WireGuardManager -ErrorAction SilentlyContinue
           if ($service) {
