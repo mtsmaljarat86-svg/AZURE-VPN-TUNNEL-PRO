@@ -44,7 +44,6 @@ jobs:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           tags: tag:github-exit
           version: latest
-          tailscaled-args: --netfilter-mode=on
           args: --advertise-exit-node
           log-mode: normal
 
