@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
-      - name: Validate requested duration and runner networking
+      - name: Validate runner and enable forwarding
         shell: bash
         run: |
           set -euo pipefail
@@ -33,36 +33,49 @@ jobs:
           echo "DURATION_MINUTES=$DURATION" >> "$GITHUB_ENV"
 
           sudo modprobe tun || true
-          if [[ ! -c /dev/net/tun ]]; then
-            echo "::error::This GitHub runner does not expose /dev/net/tun. It cannot operate as a kernel-mode exit node."
-            exit 1
-          fi
-          echo "TUN device is available."
-
-          echo "Enabling IPv4/IPv6 forwarding..."
+          test -c /dev/net/tun || { echo "::error::/dev/net/tun is unavailable; this runner cannot be a kernel-mode exit node."; exit 1; }
           sudo sysctl -w net.ipv4.ip_forward=1
           sudo sysctl -w net.ipv6.conf.all.forwarding=1
+          echo "TUN device and IP forwarding are enabled."
 
-      - name: Connect this temporary runner to Tailscale
+      - name: Connect and advertise as a Tailscale exit node
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           tags: tag:github-exit
           version: latest
+          tailscaled-args: --netfilter-mode=on
+          args: --advertise-exit-node
+          log-mode: normal
 
-      - name: Advertise this runner as an exit node
+      - name: Diagnose exit-node routing and outbound internet
         shell: bash
         run: |
           set -euo pipefail
-          sudo tailscale set --advertise-exit-node
-          sudo tailscale up
-          echo "Tailscale node details:"
+          echo "=== Tailscale status ==="
           sudo tailscale status
-          echo "Tailscale IPv4:"
+          echo
+          echo "=== Tailscale IPv4 ==="
           sudo tailscale ip -4
           echo
-          echo "IMPORTANT: If required, approve this machine as an exit node in the Tailscale admin console."
-          echo "On the iPhone, open Tailscale and select this temporary machine under Exit Node."
+          echo "=== Kernel forwarding ==="
+          sysctl net.ipv4.ip_forward
+          sysctl net.ipv6.conf.all.forwarding
+          echo
+          echo "=== Interfaces and routes ==="
+          ip -brief address
+          ip route
+          echo
+          echo "=== Firewall forwarding rules ==="
+          sudo iptables -S FORWARD || true
+          sudo iptables -t nat -S POSTROUTING || true
+          echo
+          echo "=== Runner public IPv4 (expected egress IP if phone traffic is routed through this runner) ==="
+          curl --fail --silent --show-error --max-time 15 -4 https://api.ipify.org
+          echo
+          echo
+          echo "Compare the runner public IPv4 above with the IP shown on the iPhone while this exit node is selected."
+          echo "If they differ, phone traffic is not using this exit node yet."
 
       - name: Keep the temporary connection alive
         shell: bash
@@ -74,4 +87,4 @@ jobs:
 
       - name: Finish
         if: always()
-        run: echo "Workflow finished. Tailscale action cleanup will remove the temporary runner from the tailnet."
+        run: echo "Workflow finished. The Tailscale action will log out the temporary node."
