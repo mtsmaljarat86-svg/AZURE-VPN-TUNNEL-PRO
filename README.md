@@ -1,60 +1,39 @@
-# AZURE VPN TUNNEL PRO
+# AZURE VPN TUNNEL PRO — GitHub Actions test mode
 
-إعداد خادم WireGuard VPN على Ubuntu داخل Microsoft Azure، ثم تجهيز ملف عميل لاستيراده على iPhone.
+هذا الإصدار يعمل **بدون Azure وبدون خادم خارجي**. يستخدم جهاز GitHub Actions المؤقت لتثبيت أدوات WireGuard، وتوليد مفاتيح اختبار مؤقتة، وفحص صيغة ملف إعداد تجريبي.
 
-## كيف يعمل؟
-iPhone (تطبيق WireGuard) → نفق VPN مشفّر → Azure Ubuntu VM → الإنترنت.
+## مهم: ما الذي يفعله وما الذي لا يفعله؟
 
-## 1. جهّز خادم Azure
-أنشئ Virtual Machine بنظام Ubuntu 22.04 أو 24.04، مع Public IPv4. في Network Security Group أضف قاعدة واردة:
-- Protocol: UDP
-- Destination port: 51820
-- Source: Any (أو نطاق موثوق مناسب)
-- Action: Allow
+- ✅ يختبر أن أدوات WireGuard تعمل على بيئة Ubuntu الخاصة بـ GitHub Actions.
+- ✅ يولّد مفاتيح مؤقتة داخل مساحة التشغيل، ثم يفحص صيغة الإعداد باستخدام `wg-quick strip`.
+- ✅ لا يحتاج Azure VM أو SSH أو GitHub Secrets.
+- ❌ لا ينشئ خادماً عاماً يمكن للآيفون الاتصال به.
+- ❌ لا ينشئ ملف `iphone.conf` صالحاً للاتصال بالإنترنت، ولا يرفع مفاتيح أو ملفات VPN كـArtifact.
+- ❌ لا يحوّل GitHub Actions إلى VPN دائم أو نقطة خروج إنترنت للآيفون.
 
-اترك SSH على TCP 22 مقيداً بعنوان IP موثوق، ولا تفتح منافذ غير مطلوبة. تأكد أن حساب SSH يستطيع تنفيذ sudo.
+جهاز GitHub Actions مؤقت، ويُزال بعد انتهاء المهمة. الحد الأقصى المعتاد لوظائف GitHub-hosted runner هو 6 ساعات، لكن هذا الاختبار ينتهي خلال دقائق قليلة؛ لا توجد مدة VPN فعلية لأن النفق غير منشأ أصلاً.
 
-## 2. أضف GitHub Actions Secrets
-في المستودع افتح Settings → Secrets and variables → Actions → New repository secret، وأضف القيم التالية:
+## طريقة التشغيل
 
-| Secret name | القيمة |
-|---|---|
-| AZURE_HOST | عنوان IPv4 العام لخادم Azure |
-| AZURE_PUBLIC_IP | عنوان IPv4 العام نفسه |
-| AZURE_USER | اسم مستخدم SSH على Ubuntu |
-| AZURE_SSH_PRIVATE_KEY | المفتاح الخاص SSH الذي يسمح بالدخول إلى الخادم |
-| AZURE_SSH_KNOWN_HOSTS | مفتاح المضيف الموثوق للخادم (known_hosts) |
+1. افتح تبويب **Actions** في المستودع.
+2. اختر **Test WireGuard on GitHub Actions**.
+3. اضغط **Run workflow** ثم **Run workflow** مرة ثانية للتأكيد.
+4. افتح التشغيل وانتظر خطوة **Generate temporary test keys and validate config**.
+5. ظهور الرسالة التالية يعني نجاح اختبار الصيغة فقط:
 
-لإنشاء سطر known_hosts يمكنك تشغيل:
-```bash
-ssh-keyscan -H YOUR_AZURE_PUBLIC_IP
 ```
-تحقق من بصمة المضيف عبر مصدر موثوق قبل حفظها. لا تعطل فحص هوية المضيف ولا تستخدم `StrictHostKeyChecking=no`.
+PASS: WireGuard tools installed; temporary keys generated; config parsed.
+```
 
-**لا تضع المفاتيح الخاصة أو كلمات المرور في ملفات المستودع أو المحادثات.** خزّنها في Secrets فقط.
+## هل أحتاج أسرار GitHub؟
 
-## 3. شغّل Workflow
-1. افتح تبويب Actions.
-2. اختر Install WireGuard on Azure.
-3. اضغط Run workflow.
-4. انتظر انتهاء التشغيل بنجاح.
+لا. احذف أو اترك دون استخدام أي Secrets قديمة باسم `AZURE_HOST` أو `AZURE_USER` أو `AZURE_SSH_PRIVATE_KEY` أو غيرها؛ هذا الاختبار لا يقرأها ولا يحتاجها. لا تضع مفاتيح خاصة في المستودع.
 
-سيُنشأ Artifact باسم `wireguard-client-config` يحتوي:
-- `iphone.conf`
-- `iphone-qr.png`
+## ملفات المشروع
 
-نزّل الـ Artifact من صفحة تشغيل Workflow. مدة الاحتفاظ به يوم واحد لأنه يحتوي مفتاحاً خاصاً.
+- `.github/workflows/install-wireguard.yml`: أصبح اختباراً محلياً لأدوات وصيغة WireGuard داخل Runner.
+- `scripts/install-wireguard.sh`: سكربت إعداد خادم Ubuntu قديم يتطلب root وخادماً تملكه؛ **لا يشغله Workflow الاختبار**. لا تشغّله على جهازك أو أي خادم دون فهم التغييرات التي يجريها.
 
-## 4. استيراد الإعداد على iPhone
-1. ثبّت تطبيق WireGuard الرسمي.
-2. انقل `iphone.conf` إلى iPhone وافتحه باستخدام WireGuard، أو امسح QR من جهاز آخر.
-3. فعّل النفق.
-4. افحص عنوان IP من متصفحك للتأكد من أن الاتصال يخرج عبر خادم Azure.
+## إذا كان هدفك VPN فعلياً على iPhone
 
-## ملاحظات مهمة
-- هذا المشروع لا ينشئ Azure VM ولا يدفع تكلفتها. قد تُحتسب رسوم على VM وعنوان IP ونقل البيانات الصادرة.
-- السكربت ينشئ إعداد خادم جديداً ويرفض استبدال `/etc/wireguard/wg0.conf` إذا كان موجوداً.
-- إعداد العميل الحالي يوجّه IPv4 فقط (`0.0.0.0/0`). لا تعتبره حماية من تسرب IPv6؛ يلزم إعداد IPv6 منفصل أو تعطيله على العميل.
-- يجب أن تسمح قواعد Azure NSG وجدار الحماية داخل Ubuntu بحركة UDP على المنفذ 51820.
-- أوقف الـ VM عندما لا تحتاجها لتقليل التكلفة، مع الانتباه إلى أن بعض الموارد قد تبقى عليها رسوم.
-- ملف `iphone.conf` سرّي: من يحصل عليه يستطيع استخدام النفق. احذف الـ Artifact بعد تنزيله إذا لم تعد تحتاجه.
+تحتاج نقطة نهاية WireGuard يمكن الوصول إليها من الإنترنت وتظل متاحة أثناء اتصال الهاتف. GitHub Actions لا يوفر ذلك كخدمة VPN مستمرة. استخدم خادماً تملكه أو مزود VPN موثوقاً؛ يمكن إبقاء هذا الـWorkflow لفحص الإعدادات فقط.
