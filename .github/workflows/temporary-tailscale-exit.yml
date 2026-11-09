@@ -1,0 +1,77 @@
+name: Temporary Tailscale Exit Node (Experimental)
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "How long to keep the temporary connection running (30-300 minutes)"
+        required: true
+        default: "60"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-tailscale-exit
+  cancel-in-progress: true
+
+jobs:
+  temporary-exit-node:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - name: Validate requested duration and runner networking
+        shell: bash
+        run: |
+          set -euo pipefail
+          DURATION="${{ inputs.duration_minutes }}"
+          if ! [[ "$DURATION" =~ ^[0-9]+$ ]] || (( DURATION < 30 || DURATION > 300 )); then
+            echo "Choose a duration from 30 to 300 minutes."
+            exit 1
+          fi
+          echo "DURATION_MINUTES=$DURATION" >> "$GITHUB_ENV"
+
+          sudo modprobe tun || true
+          if [[ ! -c /dev/net/tun ]]; then
+            echo "::error::This GitHub runner does not expose /dev/net/tun. It cannot operate as a kernel-mode exit node."
+            exit 1
+          fi
+          echo "TUN device is available."
+
+          echo "Enabling IPv4/IPv6 forwarding..."
+          sudo sysctl -w net.ipv4.ip_forward=1
+          sudo sysctl -w net.ipv6.conf.all.forwarding=1
+
+      - name: Connect this temporary runner to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: tag:github-exit
+          version: latest
+
+      - name: Advertise this runner as an exit node
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo tailscale set --advertise-exit-node
+          sudo tailscale up
+          echo "Tailscale node details:"
+          sudo tailscale status
+          echo "Tailscale IPv4:"
+          sudo tailscale ip -4
+          echo
+          echo "IMPORTANT: If required, approve this machine as an exit node in the Tailscale admin console."
+          echo "On the iPhone, open Tailscale and select this temporary machine under Exit Node."
+
+      - name: Keep the temporary connection alive
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "The temporary node will stay online for ${DURATION_MINUTES} minutes."
+          echo "Keep this workflow running while using the iPhone. Cancelling this run disconnects it."
+          sleep "$((DURATION_MINUTES * 60))"
+
+      - name: Finish
+        if: always()
+        run: echo "Workflow finished. Tailscale action cleanup will remove the temporary runner from the tailnet."
