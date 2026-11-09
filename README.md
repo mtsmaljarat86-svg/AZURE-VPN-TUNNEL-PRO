@@ -37,3 +37,10 @@ PASS: WireGuard tools installed; temporary keys generated; config parsed.
 ## إذا كان هدفك VPN فعلياً على iPhone
 
 تحتاج نقطة نهاية WireGuard يمكن الوصول إليها من الإنترنت وتظل متاحة أثناء اتصال الهاتف. GitHub Actions لا يوفر ذلك كخدمة VPN مستمرة. استخدم خادماً تملكه أو مزود VPN موثوقاً؛ يمكن إبقاء هذا الـWorkflow لفحص الإعدادات فقط.
+
+
+## تشغيل VPN مؤقت من الآيفون عبر Tailscale (تجريبي)
+
+أضفنا Workflow منفصلاً باسم **Temporary Tailscale Exit Node (Experimental)** لمحاولة تشغيل Runner مؤقت كـ Exit Node. يتطلب إعداد Tailscale مرة واحدة وإضافة GitHub Secret باسم `TAILSCALE_AUTHKEY`. هذا لا ينشئ ملف WireGuard `.conf`؛ يجب استخدام تطبيق Tailscale على الآيفون.
+
+**تنبيه:** قد يتوقف الاختبار إذا لم تتوفر واجهة TUN أو صلاحيات تمرير الحزم على GitHub Runner. راجع [دليل الإعداد العربي](docs/TEMPORARY_TAILSCALE_EXIT_NODE_AR.md) قبل التشغيل. لا تعتبره VPN عاملاً حتى تتأكد من اتصال الآيفون ومرور الإنترنت فعلياً عبره.
