@@ -40,6 +40,7 @@ jobs:
           test -n "$AZURE_PUBLIC_IP"
           [[ "$AZURE_HOST" =~ ^[0-9.]+$ ]]
           [[ "$AZURE_PUBLIC_IP" =~ ^[0-9.]+$ ]]
+          [[ "$AZURE_USER" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]]
 
       - name: Install WireGuard on VM
         env:
@@ -54,6 +55,17 @@ jobs:
             "${AZURE_USER}@${AZURE_HOST}" \
             "chmod 700 /tmp/install-wireguard.sh && sudo /tmp/install-wireguard.sh '${AZURE_PUBLIC_IP}'"
 
+      - name: Prepare secure download directory
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_USER: ${{ secrets.AZURE_USER }}
+        run: |
+          set -euo pipefail
+          REMOTE_DIR="/home/${AZURE_USER}/wireguard-client"
+          ssh -i "$HOME/.ssh/azure_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "${AZURE_USER}@${AZURE_HOST}" \
+            "sudo install -d -o '${AZURE_USER}' -g '${AZURE_USER}' -m 700 '${REMOTE_DIR}' && sudo install -o '${AZURE_USER}' -g '${AZURE_USER}' -m 600 /root/wireguard-client/iphone.conf '${REMOTE_DIR}/iphone.conf' && sudo install -o '${AZURE_USER}' -g '${AZURE_USER}' -m 600 /root/wireguard-client/iphone-qr.png '${REMOTE_DIR}/iphone-qr.png'"
+
       - name: Download client files
         env:
           AZURE_HOST: ${{ secrets.AZURE_HOST }}
@@ -61,10 +73,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output
+          REMOTE_DIR="/home/${AZURE_USER}/wireguard-client"
           scp -i "$HOME/.ssh/azure_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            "${AZURE_USER}@${AZURE_HOST}:/root/wireguard-client/iphone.conf" output/iphone.conf
+            "${AZURE_USER}@${AZURE_HOST}:${REMOTE_DIR}/iphone.conf" output/iphone.conf
           scp -i "$HOME/.ssh/azure_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            "${AZURE_USER}@${AZURE_HOST}:/root/wireguard-client/iphone-qr.png" output/iphone-qr.png
+            "${AZURE_USER}@${AZURE_HOST}:${REMOTE_DIR}/iphone-qr.png" output/iphone-qr.png
           chmod 600 output/iphone.conf
 
       - name: Upload client configuration (sensitive)
