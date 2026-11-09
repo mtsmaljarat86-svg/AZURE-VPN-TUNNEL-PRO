@@ -1,0 +1,76 @@
+name: Install WireGuard on Azure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.AZURE_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/azure_key"
+          chmod 600 "$HOME/.ssh/azure_key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Validate settings
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_USER: ${{ secrets.AZURE_USER }}
+          AZURE_PUBLIC_IP: ${{ secrets.AZURE_PUBLIC_IP }}
+        run: |
+          set -euo pipefail
+          test -n "$AZURE_HOST"
+          test -n "$AZURE_USER"
+          test -n "$AZURE_PUBLIC_IP"
+          [[ "$AZURE_HOST" =~ ^[0-9.]+$ ]]
+          [[ "$AZURE_PUBLIC_IP" =~ ^[0-9.]+$ ]]
+
+      - name: Install WireGuard on VM
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_USER: ${{ secrets.AZURE_USER }}
+          AZURE_PUBLIC_IP: ${{ secrets.AZURE_PUBLIC_IP }}
+        run: |
+          set -euo pipefail
+          scp -i "$HOME/.ssh/azure_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            scripts/install-wireguard.sh "${AZURE_USER}@${AZURE_HOST}:/tmp/install-wireguard.sh"
+          ssh -i "$HOME/.ssh/azure_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "${AZURE_USER}@${AZURE_HOST}" \
+            "chmod 700 /tmp/install-wireguard.sh && sudo /tmp/install-wireguard.sh '${AZURE_PUBLIC_IP}'"
+
+      - name: Download client files
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_USER: ${{ secrets.AZURE_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          scp -i "$HOME/.ssh/azure_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "${AZURE_USER}@${AZURE_HOST}:/root/wireguard-client/iphone.conf" output/iphone.conf
+          scp -i "$HOME/.ssh/azure_key" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "${AZURE_USER}@${AZURE_HOST}:/root/wireguard-client/iphone-qr.png" output/iphone-qr.png
+          chmod 600 output/iphone.conf
+
+      - name: Upload client configuration (sensitive)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wireguard-client-config
+          path: output/
+          retention-days: 1
+          if-no-files-found: error
