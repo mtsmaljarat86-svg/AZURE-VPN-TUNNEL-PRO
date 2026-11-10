@@ -59,7 +59,7 @@ jobs:
           echo "بدء التنزيل على خادم GitHub Actions..."
           curl --fail --location --silent --show-error \
             --retry 3 --retry-delay 3 --connect-timeout 30 --max-time 1800 \
-            --max-filesize 2147483648 \
+            --max-filesize 8589934592 \
             --output "$RUNNER_TEMP/remote-download/$FILE_NAME" \
             "$DOWNLOAD_URL"
           test -s "$RUNNER_TEMP/remote-download/$FILE_NAME"
