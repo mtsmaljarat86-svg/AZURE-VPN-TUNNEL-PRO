@@ -1,0 +1,75 @@
+name: Remote Downloader (GitHub Actions)
+
+on:
+  workflow_dispatch:
+    inputs:
+      download_url:
+        description: "رابط تنزيل مباشر يبدأ بـ https:// أو http://"
+        required: true
+        type: string
+      file_name:
+        description: "اسم الملف (اختياري، اتركه فارغاً لاستخدام الاسم الأصلي)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: remote-download-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  download:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Validate input and prepare destination
+        id: prepare
+        shell: bash
+        env:
+          DOWNLOAD_URL: ${{ inputs.download_url }}
+          REQUESTED_NAME: ${{ inputs.file_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          u = urlparse(os.environ["DOWNLOAD_URL"].strip())
+          if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
+              raise SystemExit("رابط غير صالح: استخدم رابط HTTP/HTTPS مباشر.")
+          PY
+          name="$(basename "${REQUESTED_NAME:-}")"
+          if [ -z "$name" ] || [ "$name" = "." ] || [ "$name" = "/" ]; then
+            name="$(basename "${DOWNLOAD_URL%%\?*}")"
+          fi
+          name="$(printf '%s' "$name" | tr -cd 'A-Za-z0-9._-')"
+          [ -n "$name" ] || name="download.bin"
+          echo "file_name=$name" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/remote-download"
+
+      - name: Download file on GitHub runner
+        shell: bash
+        env:
+          DOWNLOAD_URL: ${{ inputs.download_url }}
+          FILE_NAME: ${{ steps.prepare.outputs.file_name }}
+        run: |
+          set -euo pipefail
+          echo "بدء التنزيل على خادم GitHub Actions..."
+          curl --fail --location --silent --show-error \
+            --retry 3 --retry-delay 3 --connect-timeout 30 --max-time 1800 \
+            --max-filesize 2147483648 \
+            --output "$RUNNER_TEMP/remote-download/$FILE_NAME" \
+            "$DOWNLOAD_URL"
+          test -s "$RUNNER_TEMP/remote-download/$FILE_NAME"
+          echo "اكتمل التنزيل."
+          du -h "$RUNNER_TEMP/remote-download/$FILE_NAME"
+
+      - name: Upload downloaded file as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: downloaded-file
+          path: ${{ runner.temp }}/remote-download/*
+          if-no-files-found: error
+          retention-days: 1
